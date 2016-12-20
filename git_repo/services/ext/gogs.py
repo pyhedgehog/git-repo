@@ -26,10 +26,6 @@ class GoGSService(RepositoryService):
         fqdn = parse.hostname
         return url_base, fqdn
 
-    #@property
-    #def git_user(self):
-    #    return self.username
-
     @property
     def url_ro(self):
         return self.url_base
@@ -47,11 +43,11 @@ class GoGSService(RepositoryService):
     @classmethod
     def get_auth_token(cls, login, password, prompt=None):
         import platform
-        name = 'git-repo2 token used on {}'.format(platform.node()),
+        name = 'git-repo2 token used on {}'.format(platform.node())
         if '/' in login:
             url, login = login.rsplit('/', 1)
         else:
-            url = input('URL [{}]> '.format(cls.fqdn))
+            url = input('URL [{}]> '.format(cls.fqdn)) or cls.fqdn
         url_base, fqdn = cls._url_parse(url)
         url_api = functools.partial('{}/api/v1/{}'.format, url_base)
         r = requests.get(url_api('users/{}/tokens'.format(login)), auth=(login, password), verify=False)
@@ -62,7 +58,7 @@ class GoGSService(RepositoryService):
             return tokens[name]
         if 'git-repo2 token' in tokens:
             return tokens['git-repo2 token']
-        r = requests.get(url_api('users/{}/tokens'.format(login)), auth=(login, password), verify=False)
+        r = requests.post(url_api('users/{}/tokens'.format(login)), auth=(login, password), json=dict(name=name), verify=False)
         r.raise_for_status()
         token = r.json()
         return token['sha1']
@@ -88,7 +84,7 @@ class GoGSService(RepositoryService):
             verify = False
         elif verify.lower().strip() in ('1','yes','true'):
             verify = True
-        self.default_private = self.config.get('default_private', 'true').lower() not in ('0','no','false')
+        self.default_private = self.config.get('default-private', 'true').lower() not in ('0','no','false')
         self.ssh_url = self.config.get('ssh-url', None) or self.fqdn
         if not self.repository:
             config = git_config.GitConfigParser(os.path.join(os.environ['HOME'], '.gitconfig'), True)
@@ -109,10 +105,11 @@ class GoGSService(RepositoryService):
                     urllib3.disable_warnings()
                 except ImportError:
                     pass
-            self.session.headers.update({'Authorization': 'token '+self._privatekey})
+            if self._privatekey:
+                self.session.headers.update({'Authorization': 'token '+self._privatekey})
             self.username = self.user
         except requests.HTTPError as err:
-            if err.response and err.response.status_code == 401:
+            if err.response is not None and err.response.status_code == 401:
                 if not self._privatekey:
                     raise ConnectionError('Could not connect to GoGS. '
                                           'Please configure .gitconfig '
@@ -124,7 +121,6 @@ class GoGSService(RepositoryService):
                 raise err
 
     def create(self, user, repo, add=False):
-        print('create(%r,%r,%r)' % (user, repo, add))
         args = dict(name=repo, private=self.default_private)
         try:
             if user != self.username:
